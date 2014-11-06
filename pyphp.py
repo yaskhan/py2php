@@ -1,6 +1,8 @@
 import ast
-from cStringIO import StringIO
+from io import StringIO
+
 import sys
+import re
 
 INFSTR = '1e308'
 
@@ -16,12 +18,23 @@ def interleave(inter, f, seq):
             f(x)
 
 class PythonToPhp:
+    aliases = {}
+    staticmethods = []
+    interfaces = []
+    abstractmethods = []
     def __init__(self, source, indent = 0):
         tree = ast.parse(source)
         self.code = StringIO()
-        self.tabstop = 2
+        self.tabstop = 4
         self._indent = indent
-
+        
+        self.in_class = False
+        self.in_func  = False
+        self.funcs_to_replace = {
+            'str':'strval',
+            'int':'intval',
+            'float':'floatval',
+        }
         self.dispatch(tree)
 
     def get_code(self):
@@ -42,7 +55,7 @@ class PythonToPhp:
         self.fill('}')
 
     def error(self, msg):
-        print msg
+        print(msg)
         sys.exit()
 
     def dispatch(self, tree):
@@ -67,17 +80,23 @@ class PythonToPhp:
         self.write(';')
 
     def _Import(self, t):
-        self.error('import not supported')
+        pass #self.error('import not supported')
 
     def _ImportFrom(self, t):
-        self.error('import not supported')
+        pass #self.error('import not supported')
 
     def _Assign(self, t):
+        def incls():
+            if self.in_class and not self.in_func:
+                self.write("protected ")
+        
         self.fill()
         for target in t.targets:
             if isinstance(target, ast.Tuple):
+                incls()
                 self._lvalue_tuple(target)
             else:
+                incls()
                 self.dispatch(target)
             self.write(' = ')
         self.dispatch(t.value)
@@ -157,6 +176,11 @@ class PythonToPhp:
         self.error('yield not supported')
 
     def _Raise(self, t):
+        self.write("throw ")
+        self.dispatch(t.exc)
+        self.write(";")
+        
+    def _Try(self, t):
         self.error('Exceptions not supported')
 
     def _TryExcept(self, t):
@@ -167,17 +191,66 @@ class PythonToPhp:
 
     def _ExceptHandler(self, t):
         self.error('Exceptions not supported')
-
+    
     def _ClassDef(self, t):
-        self.error('Class not supported')
+        if t.decorator_list:
+            for _, decorator in enumerate(t.decorator_list):
+                if decorator.func.id == "interface":
+                    self.interfaces.append(decorator.func.id)
+        self.in_class = True
+        self.write('\nclass %s ' % t.name)
 
-    def _FunctionDef(self, t):
-        self.fill('function ' + t.name + '(')
-        self.dispatch(t.args)
-        self.write(')')
+        #if len(t.bases) > 0:
+            #self.write("extends %s" % ", ".join([n.id for n in t.bases if n.id not in self.interfaces ]))
+            #self.write(" implements %s" % ", ".join([n.id for n in t.bases if n.id in self.interfaces ]))
         self.enter()
         self.dispatch(t.body)
         self.leave()
+        self.in_class = False
+
+    def comma_if_not_one(self, node):
+        if len(node) > 0: return ", "
+        else: return ""
+        
+
+        
+    def _FunctionDef(self, t):
+        self.write("\n")
+        self.in_func = True
+        if self.in_class:
+            if t.name == "__init__":
+                self.fill('function __construct (')
+            elif t.name.startswith("_"):
+                self.fill('protected function ' + t.name + '(')
+            else:
+                self.fill('public function ' + t.name + '(')
+        else:
+            self.fill('function ' + t.name + '(')
+        self.dispatch(t.args)
+        self.write(')')
+        self.enter()
+        if t.decorator_list:
+            self.write("\n%sreturn\n" % (self._indent * "\t"))
+            for i, decorator in enumerate(t.decorator_list):
+                if decorator.func.id == "staticmethod":
+                    self.staticmethods.append(decorator.func.id)
+                elif decorator.func.id == "abstractmethod":
+                    self.abstractmethods.append(decorator.func.id)
+                if i == 0:
+                    self.write("%s%s(" % (self._indent * "\t", decorator.func.id)  )
+                if i > 0:
+                    self.write("%s%s(" % (self.comma_if_not_one(decorator.args), decorator.func.id) )
+                self.dispatch(decorator.args)
+                if i == len(t.decorator_list)-1:
+                    self.write(self.comma_if_not_one(decorator.args) + "function() use(")
+                    self.dispatch(t.args)
+                    self.write(") {\n")
+                
+        self.dispatch(t.body)
+        if t.decorator_list:
+            self.write("\n%s}%s;" % (self._indent * "\t", len(t.decorator_list)* ")"))
+        self.leave()
+        self.in_func = False
 
     def _For(self, t):
         self.fill('foreach (')
@@ -234,7 +307,9 @@ class PythonToPhp:
         self.write(repr(t.s))
 
     def _Name(self, t):
-        if t.id == 'True':
+        if t.id == 'self':
+            self.write('$this')
+        elif t.id == 'True':
             self.write('true')
         elif t.id == 'False':
             self.write('false')
@@ -456,13 +531,29 @@ class PythonToPhp:
         self.dispatch(t.value)
         self.write("->")
         self.write(t.attr)
+        if isinstance(t.ctx, ast.Load):
+            self.write("(")
 
     def _func_name(self, t):
-        self.write('%s' % t.id)
+        if isinstance(t, ast.Name):
+            if re.match('^[A-Z]', t.id):
+                self.write('new %s' % t.id)
+            elif t.id in self.funcs_to_replace:
+                self.write('%s' % self.funcs_to_replace[t.id])
+            else:
+                self.write('%s' % t.id)
 
     def _Call(self, t):
-        self._func_name(t.func)
-        self.write("(")
+        if isinstance(t.func, ast.Attribute):
+            self.dispatch(t.func)
+        elif t.func.id == 'isinstance':
+            self.write("(")
+            self.dispatch(t.args[0])
+            self.write(" instanceof %s )" % t.args[1].id)
+            return
+        else:
+            self._func_name(t.func)
+            self.write("(")
         comma = False
         for e in t.args:
             if comma: self.write(", ")
@@ -480,15 +571,17 @@ class PythonToPhp:
 
     def _Subscript(self, t):
         if isinstance(t.slice, ast.Index):
-            #self.dispatch(t.value)
-            #self.write("[")
-            #self.dispatch(t.slice)
-            #self.write("]")
-            self.write('pyphp_subscript(')
             self.dispatch(t.value)
-            self.write(', ')
+            self.write("[")
             self.dispatch(t.slice)
-            self.write(')')
+            self.write("]")
+            #==================================================================
+            # self.write('pyphp_subscript(')
+            # self.dispatch(t.value)
+            # self.write(', ')
+            # self.dispatch(t.slice)
+            # self.write(')')
+            #==================================================================
         elif isinstance(t.slice, ast.Slice):
             self.write('array_slice(')
             self.dispatch(t.value)
@@ -530,6 +623,7 @@ class PythonToPhp:
         first = True
         defaults = [None] * (len(t.args) - len(t.defaults)) + t.defaults
         for a,d in zip(t.args, defaults):
+            if a.arg == "self": continue
             if first: first = False
             else: self.write(", ")
             self.dispatch(a),
@@ -541,6 +635,9 @@ class PythonToPhp:
         if t.kwarg:
             self.error('function kwarg not supported')
 
+    def _arg(self, t):
+        self.write("$%s" % t.arg)
+        
     def _keyword(self, t):
         self.write('$%s' % t.arg)
         self.write(" = ")
@@ -550,9 +647,12 @@ class PythonToPhp:
         self.write("(")
         self.write("function(")
         self.dispatch(t.args)
-        self.write(") {")
+        self.write(") {\n")
         self.dispatch(t.body)
-        self.write("})")
+        self.write("\n})")
 
     def _alias(self, t):
         self.error('alias not supported')
+    
+    def _NameConstant(self, t):
+        pass
