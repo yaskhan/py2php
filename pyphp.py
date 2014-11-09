@@ -206,15 +206,22 @@ class PythonToPhp:
     
     def _ClassDef(self, t):
         if t.decorator_list:
-            for _, decorator in enumerate(t.decorator_list):
-                if decorator.func.id == "interface":
-                    self.interfaces.append(decorator.func.id)
+           for _, decorator in enumerate(t.decorator_list):
+                if decorator.id == "interface":
+                    self.interfaces.append(t.name)
+                    self.write("\n\ninterface ")
+                if decorator.id == "abstract":
+                    self.interfaces.append(t.name)
+                    self.write("\n\nabstract ")
+        else: self.write('\n\n')
         self.in_class = True
-        self.write('\nclass %s ' % t.name)
+        self.write('class %s ' % t.name)
 
-        #if len(t.bases) > 0:
-            #self.write("extends %s" % ", ".join([n.id for n in t.bases if n.id not in self.interfaces ]))
-            #self.write(" implements %s" % ", ".join([n.id for n in t.bases if n.id in self.interfaces ]))
+        if len(t.bases) > 0:
+            clss = ", ".join([n.id for n in t.bases if n.id not in self.interfaces ])
+            if clss: self.write("extends %s" % clss)
+            intrfs = ", ".join([n.id for n in t.bases if n.id in self.interfaces ])
+            if intrfs: self.write(" implements %s" % intrfs)
         self.enter()
         self.dispatch(t.body)
         self.leave()
@@ -224,43 +231,60 @@ class PythonToPhp:
         if len(node) > 0: return ", "
         else: return ""
         
-
+    def nameOrCall(self, t):
+        if isinstance(t, ast.Name): return t.id
+        else: return t.func.id
+        
+    def reallyDecorator(self, t):
+        len = 0
+        for decorator in t.decorator_list:
+            if self.nameOrCall(decorator)  == "staticmethod" or self.nameOrCall(decorator)  == "abstractmethod": continue
+            else: len = len + 1
+        return len
         
     def _FunctionDef(self, t):
         self.write("\n")
         self.in_func = True
+        if t.decorator_list:
+            for i, decorator in enumerate(t.decorator_list):
+                if self.nameOrCall(decorator) == "staticmethod":
+                    self.staticmethods.append(t.name)
+                    self.write('\n%sstatic ' % (' ' * self.tabstop * self._indent))
+                elif self.nameOrCall(decorator)  == "abstractmethod":
+                    self.abstractmethods.append(t.name)
+                    self.write('\n%sabstract ' % (' ' * self.tabstop * self._indent))
+        else: 
+            self.write('\n%s' % (' ' * self.tabstop * self._indent))
         if self.in_class:
             if t.name == "__init__":
-                self.fill('function __construct (')
+                self.write('function __construct (')
             elif t.name.startswith("_"):
-                self.fill('protected function ' + t.name + '(')
+                self.write('protected function ' + t.name + '(')
             else:
-                self.fill('public function ' + t.name + '(')
+                self.write('public function ' + t.name + '(')
         else:
-            self.fill('function ' + t.name + '(')
+            self.write('function ' + t.name + '(')
         self.dispatch(t.args)
         self.write(')')
         self.enter()
-        if t.decorator_list:
+        if t.decorator_list and self.reallyDecorator(t):
             self.write("\n%sreturn\n" % (self._indent * "\t"))
             for i, decorator in enumerate(t.decorator_list):
-                if decorator.func.id == "staticmethod":
-                    self.staticmethods.append(decorator.func.id)
-                elif decorator.func.id == "abstractmethod":
-                    self.abstractmethods.append(decorator.func.id)
+                if self.nameOrCall(decorator)  == "staticmethod" or \
+                self.nameOrCall(decorator)  == "abstractmethod": continue
                 if i == 0:
-                    self.write("%s%s(" % (self._indent * "\t", decorator.func.id)  )
+                    self.write("%s%s(" % (self._indent * "\t", self.nameOrCall(decorator) )  )
                 if i > 0:
-                    self.write("%s%s(" % (self.comma_if_not_one(decorator.args), decorator.func.id) )
+                    self.write("%s%s(" % (self.comma_if_not_one(decorator.args), self.nameOrCall(decorator) ) )
                 self.dispatch(decorator.args)
-                if i == len(t.decorator_list)-1:
+                if i == self.reallyDecorator(t):
                     self.write(self.comma_if_not_one(decorator.args) + "function() use(")
                     self.dispatch(t.args)
                     self.write(") {\n")
                 
         self.dispatch(t.body)
-        if t.decorator_list:
-            self.write("\n%s}%s;" % (self._indent * "\t", len(t.decorator_list)* ")"))
+        if t.decorator_list and self.reallyDecorator(t):
+            self.write("\n%s}%s;" % (self._indent * "\t", self.reallyDecorator(t)* ")"))
         self.leave()
         self.in_func = False
 
