@@ -564,8 +564,14 @@ class PythonToPhp:
         self.write(")")
 
     def _Attribute(self,t):
-        self.dispatch(t.value)
-        self.write("->")
+        if re.match('^[A-Z]', t.value.id):
+            self.write(t.value.id)
+        else:
+            self.write("$%s" % t.value.id)
+        if t.attr in self.staticmethods or re.match('^[A-Z][_A-Z]*$', t.attr): # it's a constant if ALL CAPS
+            self.write("::")
+        else:
+            self.write("->")
         self.write(t.attr)
         if isinstance(t.ctx, ast.Load):
             self.write("(")
