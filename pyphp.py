@@ -176,12 +176,16 @@ class PythonToPhp:
         self.error('yield not supported')
 
     def _Raise(self, t):
-        self.write("throw ")
+        self.fill("throw ")
         self.dispatch(t.exc)
         self.write(";")
         
     def _Try(self, t):
-        self.error('Exceptions not supported')
+        self.write("try")
+        self.enter()
+        self.dispatch(t.body)
+        self.leave()
+        self.dispatch(t.handlers)
 
     def _TryExcept(self, t):
         self.error('Exceptions not supported')
@@ -190,7 +194,15 @@ class PythonToPhp:
         self.error('Exceptions not supported')
 
     def _ExceptHandler(self, t):
-        self.error('Exceptions not supported')
+        if isinstance(t.type, ast.Name):
+            if t.type.id and t.name:
+                self.write(" catch(%s $%s)" % (t.type.id, t.name))
+            elif t.type.id and not t.name:
+                self.write(" catch(%s)" % t.type.id)
+        else: self.write(" catch()")
+        self.enter()
+        self.dispatch(t.body)
+        self.leave()
     
     def _ClassDef(self, t):
         if t.decorator_list:
@@ -655,4 +667,7 @@ class PythonToPhp:
         self.error('alias not supported')
     
     def _NameConstant(self, t):
+        pass
+        
+    def _NoneType(self, t):
         pass

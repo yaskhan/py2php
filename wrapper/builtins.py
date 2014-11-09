@@ -1,4 +1,8 @@
+
 def interface():
+    pass
+#for abstract classes
+def abstract():
     pass
 def abstractmethod():
     pass

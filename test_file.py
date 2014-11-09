@@ -25,7 +25,8 @@ while sta.valid():
 
 
 
-
+const = Asd.CONSTATNT
+static = Asd.staticMethod()
 
 
 
@@ -41,8 +42,11 @@ aa = {"a":1, "b":2}
 for a,d in aa.items():
     print(a, " : ", d)
     
-
-class Asd(A):
+@interface
+class dfa():
+	pass
+	
+class Asd(A, dfa):
     f = []
     g = ""
     h = 0
