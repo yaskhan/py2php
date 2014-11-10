@@ -25,8 +25,6 @@ while sta.valid():
 
 
 
-const = Asd.CONSTATNT
-static = Asd.staticMethod()
 
 
 

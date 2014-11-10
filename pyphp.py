@@ -206,7 +206,7 @@ class PythonToPhp:
     
     def _ClassDef(self, t):
         if t.decorator_list:
-           for _, decorator in enumerate(t.decorator_list):
+           for decorator in t.decorator_list:
                 if decorator.id == "interface":
                     self.interfaces.append(t.name)
                     self.write("\n\ninterface ")
@@ -246,7 +246,7 @@ class PythonToPhp:
         self.write("\n")
         self.in_func = True
         if t.decorator_list:
-            for i, decorator in enumerate(t.decorator_list):
+            for decorator in t.decorator_list:
                 if self.nameOrCall(decorator) == "staticmethod":
                     self.staticmethods.append(t.name)
                     self.write('\n%sstatic ' % (' ' * self.tabstop * self._indent))
