@@ -61,6 +61,20 @@ class Asd extends A {
 }
 ```
 
+
+Как пользоваться генератором оберток?
+--------------------------------------
+Установите phpDocumentator2
+Используйте ее для генераций XML файлов:
+```
+phpdoc -d "./src" -t "./folder_for_xml" --template="XML"
+```
+После этого:
+```
+python wrapper_gen.py -i "./folder_for_xml/structure.xml" -o "./wrapper"
+```
+
+
 Лицензия
 --------
 MIT
