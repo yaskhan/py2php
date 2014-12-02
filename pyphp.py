@@ -2,7 +2,7 @@ import ast
 from io import StringIO
 
 import sys
-import re
+import re, os, os.path, ast
 
 INFSTR = '1e308'
 
@@ -22,6 +22,7 @@ class PythonToPhp:
     staticmethods = []
     interfaces = []
     abstractmethods = []
+    
     def __init__(self, source, indent = 0):
         tree = ast.parse(source)
         self.code = StringIO()
@@ -83,7 +84,14 @@ class PythonToPhp:
         pass #self.error('import not supported')
 
     def _ImportFrom(self, t):
-        pass #self.error('import not supported')
+        fname = os.path.join(os.getcwd(), t.module.replace(".", os.sep)) + ".py"
+        if os.path.exists(fname):
+            ofile = open(fname, "r")
+            PythonToPhp(ast.parse(ofile.read()))
+            self.dispatch(t.names)
+            ofile.close()
+        else:
+            self.error('import file "'+ t.module +'" not found')
 
     def _Assign(self, t):
         def incls():
@@ -181,7 +189,7 @@ class PythonToPhp:
         self.write(";")
         
     def _Try(self, t):
-        self.write("try")
+        self.fill("try")
         self.enter()
         self.dispatch(t.body)
         self.leave()
@@ -218,9 +226,9 @@ class PythonToPhp:
         self.write('class %s ' % t.name)
 
         if len(t.bases) > 0:
-            clss = ", ".join([n.id for n in t.bases if n.id not in self.interfaces ])
+            clss = ", ".join([self._getAlias(n.id) for n in t.bases if self._getAlias(n.id) not in self.interfaces ])
             if clss: self.write("extends %s" % clss)
-            intrfs = ", ".join([n.id for n in t.bases if n.id in self.interfaces ])
+            intrfs = ", ".join([self._getAlias(n.id) for n in t.bases if self._getAlias(n.id) in self.interfaces ])
             if intrfs: self.write(" implements %s" % intrfs)
         self.enter()
         self.dispatch(t.body)
@@ -241,6 +249,12 @@ class PythonToPhp:
             if self.nameOrCall(decorator)  == "staticmethod" or self.nameOrCall(decorator)  == "abstractmethod": continue
             else: len = len + 1
         return len
+    
+    def _getAlias(self, name):
+        if name in self.aliases:
+            return self.aliases[name]
+        else:
+            return name
         
     def _FunctionDef(self, t):
         self.write("\n")
@@ -578,12 +592,13 @@ class PythonToPhp:
 
     def _func_name(self, t):
         if isinstance(t, ast.Name):
-            if re.match('^[A-Z]', t.id):
-                self.write('new %s' % t.id)
-            elif t.id in self.funcs_to_replace:
-                self.write('%s' % self.funcs_to_replace[t.id])
+            tid = self._getAlias(t.id)
+            if re.match('^[A-Z]', tid):
+                self.write('new %s' % tid)
+            elif tid in self.funcs_to_replace:
+                self.write('%s' % self.funcs_to_replace[tid])
             else:
-                self.write('%s' % t.id)
+                self.write('%s' % tid)
 
     def _Call(self, t):
         if isinstance(t.func, ast.Attribute):
@@ -694,7 +709,7 @@ class PythonToPhp:
         self.write("\n})")
 
     def _alias(self, t):
-        self.error('alias not supported')
+        self.aliases[t.asname] = t.name
     
     def _NameConstant(self, t):
         pass
