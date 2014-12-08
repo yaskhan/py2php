@@ -31,6 +31,8 @@ class PythonToPhp:
         
         self.in_class = False
         self.in_func  = False
+        self.in_p2p_func = False
+        
         self.funcs_to_replace = {
             'str':'strval',
             'int':'intval',
@@ -78,7 +80,10 @@ class PythonToPhp:
     def _Expr(self, tree):
         self.fill()
         self.dispatch(tree.value)
-        self.write(';')
+        if not self.in_p2p_func:
+            self.write(';')
+        else: self.in_p2p_func = False
+
 
     def _Import(self, t):
         pass #self.error('import not supported')
@@ -607,6 +612,10 @@ class PythonToPhp:
             self.write("(")
             self.dispatch(t.args[0])
             self.write(" instanceof %s )" % t.args[1].id)
+            return
+        elif t.func.id == 'py2php':
+            self.in_p2p_func = True
+            self.write(t.args[0].s)
             return
         else:
             self._func_name(t.func)
