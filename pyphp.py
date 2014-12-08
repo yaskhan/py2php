@@ -287,17 +287,23 @@ class PythonToPhp:
         self.write(')')
         self.enter()
         if t.decorator_list and self.reallyDecorator(t):
-            self.write("\n%sreturn\n" % (self._indent * "\t"))
+            self.write("\n%sreturn\n" % (self._indent * "\t")) ; j = 0
             for i, decorator in enumerate(t.decorator_list):
                 if self.nameOrCall(decorator)  == "staticmethod" or \
-                self.nameOrCall(decorator)  == "abstractmethod": continue
+                self.nameOrCall(decorator)  == "abstractmethod":
+                    j -= 1 ;  continue
+                if self.reallyDecorator(t) >= 1 and not isinstance(decorator, ast.Name):
+                    comma = self.comma_if_not_one(decorator.args)
+                else:
+                    comma = ""
                 if i == 0:
                     self.write("%s%s(" % (self._indent * "\t", self.nameOrCall(decorator) )  )
                 if i > 0:
-                    self.write("%s%s(" % (self.comma_if_not_one(decorator.args), self.nameOrCall(decorator) ) )
-                self.dispatch(decorator.args)
-                if i == self.reallyDecorator(t):
-                    self.write(self.comma_if_not_one(decorator.args) + "function() use(")
+                    self.write("%s(" % (self.nameOrCall(decorator) ) )
+                if not isinstance(decorator, ast.Name): self.dispatch(decorator.args)
+                self.write(comma)
+                if j+i+1 == self.reallyDecorator(t):
+                    self.write(" function() use(")
                     self.dispatch(t.args)
                     self.write(") {\n")
                 
