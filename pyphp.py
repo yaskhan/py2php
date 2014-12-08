@@ -592,14 +592,18 @@ class PythonToPhp:
         if re.match('^[A-Z]', t.value.id):
             self.write(t.value.id)
         else:
-            self.write("$%s" % t.value.id)
-        if t.attr in self.staticmethods or re.match('^[A-Z][_A-Z]*$', t.attr): # it's a constant if ALL CAPS
+            self.dispatch(t.value)
+        
+        isConst = re.match('^[A-Z][_A-Z]*$', t.attr)
+        if t.attr in self.staticmethods or isConst: # it's a constant if ALL CAPS
             self.write("::")
         else:
             self.write("->")
         self.write(t.attr)
-        if isinstance(t.ctx, ast.Load):
-            self.write("(")
+        
+        if not isConst:
+            if isinstance(t.ctx, ast.Load):
+                self.write("(")
 
     def _func_name(self, t):
         if isinstance(t, ast.Name):
